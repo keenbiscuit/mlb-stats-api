@@ -1,0 +1,58 @@
+version: '3.8'
+
+#docker-compose file for mlbstats application
+#starts the app, Redis, and Postgres all at once locally
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: mlbstats_postgres
+    environment:
+      POSTGRES_USER: mlbstats_user
+      POSTGRES_PASSWORD: mlbstats_password
+      POSTGRES_DB: mlbstats_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mlbstats_user -d mlbstats_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      
+  #Redis
+  redis:
+    image: redis:alpine
+    container_name: mlbstats_redis
+    ports:
+      - "6379:6379"
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  #mlbstats app
+  app:
+    build: .
+    container_name: mlb-stats-api
+    ports:
+      - "8080:8080"
+    environment:
+      # Override application.yml defaults to point to the docker network services
+      DB_URL: jdbc:postgresql://postgres:5432/mlbstats_db
+      DB_USER: mlbstats_user
+      DB_PASSWORD: mlbstats_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JAVA_OPTS: -Xmx512m -Xms256m
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+ 
+volumes:
+  postgres_data:
